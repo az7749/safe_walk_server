@@ -6,7 +6,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 
 DB_CONFIG = {
-    'host': 'localhost',
+    # 'host': 'localhost',
+    'host': '192.168.35.20',
     'dbname': 'night_safe_walk',
     'user': 'postgres',
     'password': '0000',
@@ -124,7 +125,7 @@ def signup():
 
         cur.execute(
             'INSERT INTO users (login_id, name, phone, birth_date, gender, password) VALUES (%s, %s, %s, %s, %s, %s)',
-            (login_id, name, phone, birth_date, gender, password)
+            (login_id, name, phone, birth_date, gender, hashed_password)
         )
 
         conn.commit()
@@ -149,17 +150,18 @@ def signup():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-
+    print("login data:", data)
+    
     if not data:
         return jsonify({
             'success': False,
             'message': '요청 데이터가 없습니다.'
         }), 400
 
-    user_id = data.get('user_id')
+    login_id = data.get('login_id')
     password = data.get('password')
 
-    if not user_id or not password:
+    if not login_id or not password:
         return jsonify({
             'success': False,
             'message': '아이디와 비밀번호를 입력해주세요.'
@@ -167,34 +169,34 @@ def login():
 
     conn = get_db_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            'SELECT id, user_id, password, name FROM users WHERE user_id = %s',
-            (user_id,)
+            'SELECT user_id, login_id, password, name FROM users WHERE login_id = %s',
+            (login_id,)
         )
         user = cur.fetchone()
+        print("db user:", user)
 
         if user is None:
             return jsonify({
                 'success': False,
-                'message': '존재하지 않는 아이디입니다.'
+                'message': '아이디 또는 비밀번호를 다시 확인하세요.'
             }), 401
 
-        db_id, db_user_id, db_password, db_name = user
+        db_user_id, db_login_id, db_password, db_name = user
 
         if not check_password_hash(db_password, password):
             return jsonify({
                 'success': False,
-                'message': '비밀번호가 올바르지 않습니다.'
+                'message': '아이디 또는 비밀번호를 다시 확인하세요.'
             }), 401
 
         return jsonify({
             'success': True,
             'message': '로그인 성공',
             'user': {
-                'id': db_id,
-                'user_id': db_user_id,
+                'id': db_user_id,
+                'login_id': db_login_id,
                 'name': db_name
             }
         }), 200
