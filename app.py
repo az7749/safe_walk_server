@@ -6,8 +6,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 
 DB_CONFIG = {
-    # 'host': 'localhost',
-    'host': '192.168.35.20',
+    'host': 'localhost',
+    # 'host': '192.168.35.20',
     'dbname': 'night_safe_walk',
     'user': 'postgres',
     'password': '0000',
