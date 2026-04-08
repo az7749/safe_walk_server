@@ -3,17 +3,26 @@ import psycopg2
 from pathlib import Path
 
 DB_CONFIG = {
-    "host": "localhost",
+    # "host": "localhost",
+    'host': '192.168.35.20',
     "dbname": "night_safe_walk",
     "user": "postgres",
     "password": "0000",
     "port": 5432,
 }
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+RAW_DIR = DATA_DIR / "raw"
+PROCESSED_DIR = DATA_DIR / "processed"
+
+PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_processed_csv_path(csv_path: Path) -> Path:
+    date_part = csv_path.stem.split("_")[-1]
+    return PROCESSED_DIR / f"securitylight_cheongju_processed_{date_part}.csv"
 
 def get_latest_csv(prefix: str) -> Path:
-    files = sorted(DATA_DIR.glob(f"{prefix}_*.csv"))
+    files = sorted(RAW_DIR.glob(f"{prefix}_*.csv"))
     if not files:
         raise FileNotFoundError(f"{prefix} 파일이 없습니다.")
     return files[-1]
@@ -104,6 +113,10 @@ def main():
 
     df = clean_dataframe(df)
     print(f"정제 후 행 수: {len(df)}")
+
+    processed_path = get_processed_csv_path(CSV_PATH)
+    df.to_csv(processed_path, index=False, encoding="utf-8-sig")
+    print(f"가공 완료 CSV 저장: {processed_path}")
 
     insert_data(df)
     print("작업 완료")
