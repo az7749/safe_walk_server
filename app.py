@@ -6,8 +6,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 
 DB_CONFIG = {
-    # 'host': 'localhost',
-    'host': '192.168.35.20',
+    'host': 'localhost',
+    # 'host': '192.168.35.20',
     'dbname': 'night_safe_walk',
     'user': 'postgres',
     'password': '0000',
@@ -210,6 +210,61 @@ def login():
     finally:
         cur.close()
         conn.close()
+
+@app.route('/facilities', methods=['GET'])
+def get_facilities():
+    facility_type = request.args.get('type')
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        if facility_type:
+            cur.execute("""
+            SELECT  facility_id, type, weight_score, 
+                    ST_Y(geom) AS lat, ST_X(geom) AS lng
+            FROM    safety_facilities
+            WHERE   type = %s
+            LIMIT   400
+            """, (facility_type,))
+        else:
+            cur.execute("""
+            SELECT
+                facility_id,
+                type,
+                weight_score,
+                ST_Y(geom) AS lat,
+                ST_X(geom) AS lng
+            FROM safety_facilities
+            LIMIT 400
+        """)
+
+        rows = cur.fetchall()
+        facilities = []
+        for row in rows:
+            facilities.append({
+                'facility_id': row[0],
+                'type': row[1],
+                'weight_score': row[2],
+                'lat': row[3],
+                'lng': row[4],
+            })
+
+        return jsonify({
+            'success': True,
+            'facilities': facilities,
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'시설물 조회 오류: {str(e)}'
+        }), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
