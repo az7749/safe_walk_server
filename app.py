@@ -4,6 +4,8 @@ import psycopg2
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+# 주석: Flutter 지도 화면에서 현재 화면 범위 기준으로 재조회할 수 있도록 CORS 허용
+CORS(app)
 
 DB_CONFIG = {
     'host': 'localhost',
@@ -213,31 +215,45 @@ def login():
 
 @app.route('/facilities', methods=['GET'])
 def get_facilities():
-    facility_type = request.args.get('type')
+    # 주석: 현재 화면 bounds 안에 있는 CCTV만 조회하는 API
+    min_lat = request.args.get('min_lat', type=float)
+    max_lat = request.args.get('max_lat', type=float)
+    min_lng = request.args.get('min_lng', type=float)
+    max_lng = request.args.get('max_lng', type=float)
+    limit = request.args.get('limit', default=200, type=int)
+
+    if None in (min_lat, max_lat, min_lng, max_lng):
+        return jsonify({
+            'success': False,
+            'message': 'min_lat, max_lat, min_lng, max_lng are required.'
+        }), 400
+
+    if min_lat > max_lat or min_lng > max_lng:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid bounds: min values must be smaller than max values.'
+        }), 400
+
+    limit = max(1, min(limit, 500))
 
     conn = get_db_connection()
     cur = conn.cursor()
 
     try:
-        if facility_type:
-            cur.execute("""
-            SELECT  facility_id, type, weight_score, 
-                    ST_Y(geom) AS lat, ST_X(geom) AS lng
-            FROM    safety_facilities
-            WHERE   type = %s
-            LIMIT   400
-            """, (facility_type,))
-        else:
-            cur.execute("""
+        cur.execute("""
             SELECT
                 facility_id,
-                type,
+                TRIM(type) AS type,
                 weight_score,
                 ST_Y(geom) AS lat,
                 ST_X(geom) AS lng
             FROM safety_facilities
-            LIMIT 400
-        """)
+            WHERE TRIM(type) = 'cctv'
+              AND ST_Y(geom) BETWEEN %s AND %s
+              AND ST_X(geom) BETWEEN %s AND %s
+            ORDER BY facility_id
+            LIMIT %s
+        """, (min_lat, max_lat, min_lng, max_lng, limit))
 
         rows = cur.fetchall()
         facilities = []
