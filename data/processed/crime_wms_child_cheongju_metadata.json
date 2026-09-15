@@ -1,0 +1,13 @@
+{
+  "srs": "EPSG:3857",
+  "bbox": [
+    14167344.676702937,
+    4358322.681648931,
+    14225230.43683201,
+    4424180.619562496
+  ],
+  "width": 2048,
+  "height": 2330,
+  "layer": "A2SM_ODBLRCRMNLHSPOT_KID",
+  "style": "A2SM_OdblrCrmnlHspot_Kid"
+}

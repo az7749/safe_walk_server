@@ -17,22 +17,28 @@ DB_CONFIG = {
 }
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-RAW_DIR = BASE_DIR / "data" / "raw"
-PROCESSED_DIR = BASE_DIR / "data" / "processed"
+DATA_DIR = BASE_DIR / "data"
+RAW_DIR = DATA_DIR / "raw"
+PROCESSED_DIR = DATA_DIR / "processed"
 ENV_PATH = BASE_DIR / ".env"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-CSV_PREFIX = "streetlight_cheongju"
-FACILITY_TYPE = "street_light"
-WEIGHT_SCORE = 5
+CSV_PREFIX = "policestations_jeongug"
+FACILITY_TYPE = "police_station"
+WEIGHT_SCORE = 30
 
-ROAD_ADDR_COL = "소재지도로명주소"
-LOT_ADDR_COL = "소재지지번주소"
+SIDO_COL = "시도청"
+POLICE_COL = "경찰서"
+OFFICE_COL = "관서명"
+DIVISION_COL = "구분"
+ADDRESS_COL = "주소"
 LAT_COL = "위도"
 LNG_COL = "경도"
 GEOCODE_STATUS_COL = "geocode_status"
 GEOCODE_SOURCE_COL = "geocode_source"
 ADDRESS_USED_COL = "geocode_address"
+
+AREA_KEYWORDS = ["청주시", "청주흥덕", "청주상당", "청주청원"]
 
 NAVER_GEOCODE_URL = "https://maps.apigw.ntruss.com/map-geocode/v2/geocode"
 NAVER_CLIENT_ID_ENV = "NAVER_MAP_CLIENT_ID"
@@ -64,7 +70,7 @@ def get_latest_csv(prefix: str) -> Path:
 
 def get_processed_csv_path(csv_path: Path) -> Path:
     date_part = csv_path.stem.split("_")[-1]
-    return PROCESSED_DIR / f"streetlight_cheongju_processed_{date_part}.csv"
+    return PROCESSED_DIR / f"policestations_cheongju_processed_{date_part}.csv"
 
 
 CSV_PATH = get_latest_csv(CSV_PREFIX)
@@ -84,18 +90,30 @@ def load_csv(csv_path: Path) -> pd.DataFrame:
     raise ValueError("CSV 인코딩을 읽을 수 없습니다.")
 
 
-def build_address(row: pd.Series) -> tuple[str | None, str]:
-    road_value = row.get(ROAD_ADDR_COL, "")
-    lot_value = row.get(LOT_ADDR_COL, "")
+def filter_target_area(df: pd.DataFrame) -> pd.DataFrame:
+    required_cols = [SIDO_COL, POLICE_COL, OFFICE_COL, DIVISION_COL, ADDRESS_COL]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise KeyError(f"필수 컬럼이 없습니다: {missing_cols}")
 
-    road_addr = "" if pd.isna(road_value) else str(road_value).strip()
-    lot_addr = "" if pd.isna(lot_value) else str(lot_value).strip()
+    police_series = df[POLICE_COL].fillna("").astype(str)
+    office_series = df[OFFICE_COL].fillna("").astype(str)
+    address_series = df[ADDRESS_COL].fillna("").astype(str)
 
-    if road_addr:
-        return road_addr, "road"
-    if lot_addr:
-        return lot_addr, "lot"
-    return None, "missing"
+    mask = False
+    for keyword in AREA_KEYWORDS:
+        keyword_mask = (
+            police_series.str.contains(keyword, regex=False)
+            | office_series.str.contains(keyword, regex=False)
+            | address_series.str.contains(keyword, regex=False)
+        )
+        mask = mask | keyword_mask
+
+    filtered = df[mask].copy()
+    if filtered.empty:
+        raise ValueError("청주 지역 경찰서 데이터가 없습니다. 필터 조건을 확인하세요.")
+
+    return filtered
 
 
 def geocode_address(
@@ -132,7 +150,7 @@ def fill_coordinates_with_geocoding(df: pd.DataFrame) -> pd.DataFrame:
     if not client_id or not client_secret:
         raise EnvironmentError(
             f"{NAVER_CLIENT_ID_ENV} and {NAVER_CLIENT_SECRET_ENV} must be set "
-            "for street light geocoding."
+            "for police station geocoding."
         )
 
     address_cache: dict[str, tuple[float | None, float | None]] = {}
@@ -144,9 +162,9 @@ def fill_coordinates_with_geocoding(df: pd.DataFrame) -> pd.DataFrame:
     total_rows = len(df)
 
     for index, (_, row) in enumerate(df.iterrows(), start=1):
-        address, source = build_address(row)
-        used_addresses.append(address or "")
-        sources.append(source)
+        address = "" if pd.isna(row.get(ADDRESS_COL, "")) else str(row[ADDRESS_COL]).strip()
+        used_addresses.append(address)
+        sources.append("address")
 
         if not address:
             latitudes.append(None)
@@ -172,7 +190,7 @@ def fill_coordinates_with_geocoding(df: pd.DataFrame) -> pd.DataFrame:
             "success" if lat is not None and lng is not None else "not_found"
         )
 
-        if index % 100 == 0 or index == total_rows:
+        if index % 20 == 0 or index == total_rows:
             success_count = statuses.count("success")
             missing_count = statuses.count("missing_address")
             not_found_count = statuses.count("not_found")
@@ -248,11 +266,14 @@ def insert_data(df: pd.DataFrame):
 
 
 def main():
-    print("가로등 CSV 적재 시작")
+    print("경찰서 CSV 적재 시작")
     print(f"원본 파일: {CSV_PATH}")
 
     df = load_csv(CSV_PATH)
     print(f"원본 행 수: {len(df)}")
+
+    df = filter_target_area(df)
+    print(f"청주 지역 필터 후 행 수: {len(df)}")
 
     df = fill_coordinates_with_geocoding(df)
     print(
@@ -268,7 +289,7 @@ def main():
     print(f"좌표 정제 후 행 수: {len(cleaned_df)}")
 
     insert_data(cleaned_df)
-    print("가로등 적재 완료")
+    print("경찰서 적재 완료")
 
 
 if __name__ == "__main__":
